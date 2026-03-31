@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Magrabi POS - Inventory Reconciliation</title>
+    <style>
+        /* General Styling */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #eaf4e5; 
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        
+        .navbar {
+            background-color: #ffffff;
+            padding: 10px 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+        }
+        
+        .navbar img {
+            height: 50px;
+            width: auto;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 30px auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            flex: 1; 
+            width: 90%;
+        }
+
+        .step-title {
+            color: #e91e63;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            margin-top: 20px;
+            text-transform: uppercase;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            box-sizing: border-box;
+            font-family: monospace;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #00aee0;
+            border-radius: 4px;
+            box-sizing: border-box;
+            background-color: #f9f9f9;
+        }
+        .btn {
+            background-color: #00aee0;
+            color: #ffffff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        .btn:hover {
+            background-color: #008fbc;
+        }
+        
+        .btn-export {
+            background-color: #e91e63;
+            margin-top: 20px;
+            float: right;
+        }
+        .btn-export:hover {
+            background-color: #c2185b;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+            font-size: 13px;
+        }
+        .table-title {
+            background-color: #2c2e30;
+            color: #ffffff;
+            padding: 10px;
+            font-weight: bold;
+            font-size: 14px;
+            margin-top: 30px;
+            border-radius: 4px 4px 0 0;
+        }
+        th {
+            background-color: #00aee0;
+            color: #ffffff;
+            padding: 10px;
+            text-align: left;
+            border-right: 1px solid #008fbc;
+        }
+        th:last-child { border-right: none; }
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            color: #333;
+        }
+        
+        .match { background-color: #ffffff; }
+        .short { background-color: #ffebee; color: #c62828; font-weight: bold; } 
+        .over { background-color: #e8f5e9; color: #2e7d32; font-weight: bold; } 
+        
+        .clearfix::after {
+            content: "";
+            clear: both;
+            display: table;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 13px;
+            margin-top: 20px;
+        }
+        .footer span {
+            font-weight: bold;
+            color: #e91e63;
+        }
+    </style>
+</head>
+<body>
+
+<div class="navbar">
+    <img src="https://magrabiretailgroup.com/wp-content/themes/magrabiretail/img/Magrabi_RetailGroup_Logo.webp" alt="MAGRABi Retail Group">
+</div>
+
+<div class="container clearfix">
+    
+    <div class="step-title">1. Encode System Data</div>
+    <label style="font-size: 12px; color: #666;">Copy two columns directly from your spreadsheet (SKU and Quantity) and <b><u>paste them below:</u></b></label>
+    <textarea id="pasteArea" placeholder="Example format:&#10;1234567890   5&#10;0987654321   12"></textarea>
+    
+    <div style="display: flex; align-items: center; margin-top: 5px;">
+        <button class="btn" style="margin-top: 0;" onclick="loadPastedData()">Encode</button>
+        <span style="font-size: 13px; color: #e91e63; margin-left: 15px; font-weight: bold;">&larr; Click Here before encoding the physical items.</span>
+    </div>
+
+    <div class="step-title">2. Physical Items scanned</div>
+    <input type="text" id="scanInput" placeholder="Click here and start scanning barcodes or manually encode the SKU (BARCODES)." autofocus>
+
+    <div class="table-title">Items Recon List</div>
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>NO.</th>
+                <th>Item # (SKU)</th>
+                <th>System QTY</th>
+                <th>Scanned QTY</th>
+                <th>Difference</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            </tbody>
+    </table>
+    
+    <button class="btn btn-export" onclick="exportToCSV()">Export to Excel</button>
+
+</div>
+
+<div class="footer">
+    Tool developed by <span>Angelo Dacanay</span>
+</div>
+
+<script>
+    let inventory = {};
+
+    function loadPastedData() {
+        const text = document.getElementById('pasteArea').value;
+        const lines = text.split('\n');
+        
+        inventory = {}; // Clear previous data
+        let loadedCount = 0; 
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+            if (line === "") continue;
+
+            // BULLETPROOF SPLIT: This ignores all weird spacing and grabs just the data blocks
+            let cols = line.split(/[\s,]+/);
+            
+            // Filter out any empty strings that might slip through
+            cols = cols.filter(col => col.trim() !== "");
+
+            if (cols.length >= 2) {
+                let skuRaw = cols[0].trim();
+                let sku = skuRaw.replace(/^0+/, '') || '0'; 
+                
+                let qtyRaw = cols[1].trim();
+                let sysQty = Math.round(parseFloat(qtyRaw));
+                
+                if (sku !== "" && sku !== "0" && !isNaN(sysQty)) {
+                    inventory[sku] = {
+                        systemQty: sysQty,
+                        scannedQty: 0
+                    };
+                    loadedCount++;
+                }
+            }
+        }
+        
+        if (loadedCount > 0) {
+            alert(`Success! Loaded ${loadedCount} items from the system data. You can now start scanning.`);
+        } else {
+            alert("No data could be read. Please make sure you are pasting numbers in two columns (SKU and Quantity).");
+        }
+        
+        renderTable();
+        document.getElementById('scanInput').focus(); 
+    }
+
+    document.getElementById('scanInput').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            let skuRaw = this.value.trim();
+            let sku = skuRaw.replace(/^0+/, '') || '0';
+            
+            if (sku !== "" && sku !== "0") {
+                if (!inventory[sku]) {
+                    inventory[sku] = { systemQty: 0, scannedQty: 0 };
+                }
+                
+                inventory[sku].scannedQty += 1; 
+                renderTable();
+            }
+            
+            this.value = ''; 
+            e.preventDefault();
+        }
+    });
+
+    function renderTable() {
+        const tbody = document.querySelector('#resultsTable tbody');
+        tbody.innerHTML = ''; 
+        
+        let counter = 1;
+
+        for (let sku in inventory) {
+            let item = inventory[sku];
+            let diff = item.scannedQty - item.systemQty;
+            
+            let rowClass = '';
+            let statusText = '';
+            
+            if (diff === 0) {
+                rowClass = 'match';
+                statusText = 'Matched';
+            } else if (diff < 0) {
+                rowClass = 'short';
+                statusText = 'Missing Stock';
+            } else if (diff > 0) {
+                rowClass = 'over';
+                statusText = 'Extra Stock';
+            }
+
+            let tr = document.createElement('tr');
+            tr.className = rowClass;
+            tr.innerHTML = `
+                <td>${counter}</td>
+                <td><strong>${sku}</strong></td>
+                <td>${item.systemQty}</td>
+                <td><strong>${item.scannedQty}</strong></td>
+                <td>${diff}</td>
+                <td>${statusText}</td>
+            `;
+            tbody.appendChild(tr);
+            counter++;
+        }
+    }
+
+    function exportToCSV() {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += "Item # (SKU),System QTY,Scanned QTY,Difference,Status\n";
+
+        for (let sku in inventory) {
+            let item = inventory[sku];
+            let diff = item.scannedQty - item.systemQty;
+            let statusText = diff === 0 ? 'Matched' : (diff < 0 ? 'Missing Stock' : 'Extra Stock');
+            
+            let row = `${sku},${item.systemQty},${item.scannedQty},${diff},${statusText}`;
+            csvContent += row + "\n";
+        }
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        
+        let today = new Date().toISOString().split('T')[0];
+        link.setAttribute("download", `Magrabi_Recon_${today}.csv`);
+        
+        document.body.appendChild(link); 
+        link.click();
+        document.body.removeChild(link);
+    }
+</script>
+
+</body>
+</html>
